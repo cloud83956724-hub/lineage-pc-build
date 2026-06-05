@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
 
 env:
-  # Trỏ về nguồn LineageOS chuẩn của tổ chức, nhánh lineage-15.1 tồn tại 100%
   ROM_URL: "https://github.com/LineageOS/android.git"
   ROM_BRANCH: "lineage-15.1"
   DEVICE_NAME: "android_x86_64"
@@ -33,7 +32,6 @@ jobs:
           libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
           u-boot-tools scons dkms bc squashfs-tools openjdk-8-jdk wget python3 python2-minimal
         
-        # Đảm bảo tool Repo chạy bằng Python 3 không lỗi
         sudo ln -sf /usr/bin/python3 /usr/bin/python
 
     - name: Install Repo Tool
@@ -53,21 +51,26 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Khởi tạo từ nguồn LineageOS chuẩn vĩnh viễn không sợ lỗi nhánh
         repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         
-        # Tạo local manifest để kéo các thành phần PC từ Android-x86 về, trỏ trực tiếp vào nhánh chứa code
+        # Tạo local manifest thông minh: Xóa các project trùng lặp của LineageOS rồi đè driver PC vào
         mkdir -p .repo/local_manifests
         echo '<?xml version="1.0" encoding="UTF-8"?>
         <manifest>
           <remote name="ax86" fetch="https://github.com/android-x86" />
+          
+          <remove-project name="android_device_generic_common" />
+          <remove-project name="android_device_generic_x86" />
+          <remove-project name="android_device_generic_x86_64" />
+          <remove-project name="android_kernel_x86" />
+          
           <project path="device/generic/common" name="device_generic_common" remote="ax86" revision="refs/heads/magnum" />
           <project path="device/generic/x86" name="device_generic_x86" remote="ax86" revision="refs/heads/magnum" />
           <project path="device/generic/x86_64" name="device_generic_x86_64" remote="ax86" revision="refs/heads/magnum" />
           <project path="kernel/x86" name="kernel" remote="ax86" revision="refs/heads/magnum" />
         </manifest>' > .repo/local_manifests/x86.xml
 
-        # Tiến hành đồng bộ mã nguồn
+        # Tiến hành đồng bộ mã nguồn sạch sẽ
         repo sync -c -j4 --force-sync --no-tags
 
     - name: Inject microG & Patch System
@@ -82,7 +85,6 @@ jobs:
         wget -O vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk https://microg.org/fdroid/repo/com.google.android.gsf.login-20.apk
         wget -O vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk https://microg.org/fdroid/repo/com.android.vending-20.apk
 
-        # Định vị file mk để nhét cấu hình copy
         MK_FILE=""
         if [ -f "vendor/lineage/config/common.mk" ]; then
           MK_FILE="vendor/lineage/config/common.mk"
@@ -97,7 +99,6 @@ jobs:
 
     - name: Build LineageOS ISO
       run: |
-        # Trả lại Python 2 cho compiler Android cũ
         sudo ln -sf /usr/bin/python2 /usr/bin/python
         
         cd android-x86
@@ -105,8 +106,8 @@ jobs:
         export LC_ALL=C
         
         source build/envsetup.sh
-        # Chạy lệnh nạp target thiết bị x86_64
-        lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_${{ env.DEVICE_NAME }}-userdebug
+        # Chạy lệnh lunch nạp cấu hình target x86_64 PC
+        lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
         make -j$(nproc) iso_img
 
     - name: Check Artifacts
@@ -121,7 +122,7 @@ jobs:
         tag_name: "LineageOS-15.1-PC-microG-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 + microG (Build #${{ github.run_number }})"
         body: |
-          Bản build hoàn chỉnh sử dụng kỹ thuật Local Manifest kết hợp mã nguồn LineageOS gốc và driver PC.
+          Bản build hoàn chỉnh sử dụng kỹ thuật loại bỏ xung đột Local Manifest, tích hợp microG.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
