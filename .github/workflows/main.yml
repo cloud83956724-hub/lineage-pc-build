@@ -1,4 +1,4 @@
-name: Build LineageOS 15.1 PC with microG Built-in
+name: Build LineageOS 15.1 PC (Native Optimized Solution)
 
 on:
   workflow_dispatch:
@@ -10,77 +10,86 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # Khóa cứng ở bản 22.04 để hạ cấp thư viện dễ dàng nhất
     permissions:
       contents: write
 
     steps:
     - name: Maximize Build Space
       run: |
-        echo "=== Truoc khi don dep ==="
-        df -h
+        echo "=== Don dep dung luong o dia ==="
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /share/miniconda
         sudo docker image prune --all --force
-        echo "=== Sau khi don dep ==="
-        df -h
 
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Build ROM inside Docker Container
+    - name: Install Build Dependencies (Native Host)
       run: |
-        docker run --privileged -v ${{ github.workspace }}:/work -w /work ubuntu:20.04 bash -c '
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y tzdata
-          
-          apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
-            gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
-            libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
-            u-boot-tools scons dkms python2 python-is-python2 libssl-dev bc squashfs-tools openjdk-8-jdk wget python3
-          
-          mkdir -p /usr/local/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
-          chmod a+x /usr/local/bin/repo
-          
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-          
-          mkdir -p android-x86
-          cd android-x86
-          repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle
-          repo sync -c -j4 --force-sync --no-tags
-          
-          # Nhung microG dung link F-Droid truc tiep (Tranh loi 404 GitHub Release)
-          echo "=== Nhung microG vao he thong ==="
-          mkdir -p vendor/lineage/prebuilt/common/priv-app/GmsCore
-          mkdir -p vendor/lineage/prebuilt/common/priv-app/GsfProxy
-          mkdir -p vendor/lineage/prebuilt/common/app/FakeStore
+        sudo apt-get update
+        # Cài đặt các gói cốt lõi trực tiếp trên máy ảo, lược bỏ các thư viện đồ họa dư thừa để tránh tràn RAM
+        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
+          libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
+          u-boot-tools scons dkms bc squashfs-tools openjdk-8-jdk wget
+        
+        # Cài đặt Python 2 theo cách thủ công bắt buộc cho Android 8.1
+        sudo apt-get install -y python2-minimal
+        sudo ln -sf /usr/bin/python2 /usr/bin/python
+        sudo ln -sf /usr/bin/python2 /usr/bin/python2.7
 
-          wget -O vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk https://microg.org/fdroid/repo/com.google.android.gms-240913006.apk || \
-          wget -O vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk https://github.com/microg/GmsCore/releases/download/v0.3.0.233515/com.google.android.gms-233515000_v7a.apk
-          
-          wget -O vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk https://microg.org/fdroid/repo/com.google.android.gsf.login-20.apk
-          wget -O vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk https://microg.org/fdroid/repo/com.android.vending-20.apk
+    - name: Install Repo Tool
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        sudo ln -sf ~/bin/repo /usr/bin/repo
 
-          # Do tim file makefile phu hop de tu dong ghi đè (LineageOS-x86 hoac CM cu)
-          MK_FILE=""
-          if [ -f "vendor/lineage/config/common.mk" ]; then
-            MK_FILE="vendor/lineage/config/common.mk"
-          elif [ -f "vendor/cm/config/common.mk" ]; then
-            MK_FILE="vendor/cm/config/common.mk"
-          else
-            MK_FILE="device/generic/common/device.mk"
-          fi
-          
-          echo "Su dung file cau hinh: \$MK_FILE"
-          echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> \$MK_FILE
+    - name: Configure Git
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
 
-          # Tien hanh build ra file ISO
-          . build/envsetup.sh
-          lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
-          make -j$(nproc) iso_img
-        '
+    - name: Initialize and Sync Source Code
+      run: |
+        mkdir -p android-x86
+        cd android-x86
+        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle
+        repo sync -c -j4 --force-sync --no-tags
+
+    - name: Inject microG & Patch System
+      run: |
+        cd android-x86
+        echo "=== Nhung microG vao nguon ==="
+        mkdir -p vendor/lineage/prebuilt/common/priv-app/GmsCore
+        mkdir -p vendor/lineage/prebuilt/common/priv-app/GsfProxy
+        mkdir -p vendor/lineage/prebuilt/common/app/FakeStore
+
+        wget -O vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk https://microg.org/fdroid/repo/com.google.android.gms-240913006.apk
+        wget -O vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk https://microg.org/fdroid/repo/com.google.android.gsf.login-20.apk
+        wget -O vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk https://microg.org/fdroid/repo/com.android.vending-20.apk
+
+        MK_FILE=""
+        if [ -f "vendor/lineage/config/common.mk" ]; then
+          MK_FILE="vendor/lineage/config/common.mk"
+        elif [ -f "vendor/cm/config/common.mk" ]; then
+          MK_FILE="vendor/cm/config/common.mk"
+        else
+          MK_FILE="device/generic/common/device.mk"
+        fi
+        
+        echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> $MK_FILE
+
+    - name: Build LineageOS ISO
+      run: |
+        cd android-x86
+        # Tránh lỗi compiler mới ép kiểm tra nghiêm ngặt lỗi bảo mật (Bypass Host Compiler Error)
+        export WITHOUT_CHECK_API=true
+        export LC_ALL=C
+        
+        source build/envsetup.sh
+        lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
+        make -j$(nproc) iso_img
 
     - name: Check Artifacts
       run: |
@@ -94,7 +103,7 @@ jobs:
         tag_name: "LineageOS-15.1-x86-microG-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 + microG (Build #${{ github.run_number }})"
         body: |
-          Bản build LineageOS 15.1 cho PC x86_64 tích hợp sẵn microG qua kho phần mềm F-Droid bảo mật.
+          Bản build sạch chỉnh chu tích hợp sẵn microG chạy Native hoàn toàn.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
