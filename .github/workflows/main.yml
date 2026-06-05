@@ -5,7 +5,7 @@ on:
 
 env:
   ROM_URL: "https://github.com/android-x86/manifest"
-  ROM_BRANCH: "oreo-x86" # Nhánh chuẩn xác 100% của Android-x86 trên GitHub
+  ROM_BRANCH: "oreo-x86"
   DEVICE_NAME: "android_x86_64"
 
 jobs:
@@ -30,10 +30,10 @@ jobs:
         sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
           gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
           libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
-          u-boot-tools scons dkms bc squashfs-tools openjdk-8-jdk wget
+          u-boot-tools scons dkms bc squashfs-tools openjdk-8-jdk wget python3 python2-minimal
         
-        sudo apt-get install -y python2-minimal
-        sudo ln -sf /usr/bin/python2 /usr/bin/python
+        # Mặc định để hệ thống nhận diện cả lệnh 'python' là Python 3 để chạy tool Repo không bị lỗi
+        sudo ln -sf /usr/bin/python3 /usr/bin/python
 
     - name: Install Repo Tool
       run: |
@@ -51,7 +51,8 @@ jobs:
       run: |
         mkdir -p android-x86
         cd android-x86
-        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle
+        # Khởi tạo repo dùng python3 rõ ràng
+        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         repo sync -c -j4 --force-sync --no-tags
 
     - name: Inject microG & Patch System
@@ -66,25 +67,28 @@ jobs:
         wget -O vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk https://microg.org/fdroid/repo/com.google.android.gsf.login-20.apk
         wget -O vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk https://microg.org/fdroid/repo/com.android.vending-20.apk
 
-        # Kiểm tra file makefile của Android-x86 để nhúng lệnh copy APK vào ISO
         MK_FILE=""
         if [ -f "device/generic/common/device.mk" ]; then
           MK_FILE="device/generic/common/device.mk"
         else
-          MK_FILE="\$(find . -name "device.mk" | head -n 1)"
+          MK_FILE=$(find device/ -name "device.mk" | head -n 1)
         fi
         
-        echo "Ghi cau hinh vao file: \$MK_FILE"
-        echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> \$MK_FILE
+        if [ -n "$MK_FILE" ]; then
+          echo "Ghi cau hinh vao file: $MK_FILE"
+          echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> $MK_FILE
+        fi
 
     - name: Build LineageOS ISO
       run: |
+        # TRƯỚC KHI BUILD: Ép hệ thống chuyển sang dùng Python 2 để tương thích mã nguồn cũ
+        sudo ln -sf /usr/bin/python2 /usr/bin/python
+        
         cd android-x86
         export WITHOUT_CHECK_API=true
         export LC_ALL=C
         
         source build/envsetup.sh
-        # Chạy lệnh lunch trực tiếp theo cấu hình thiết bị x86_64 của mã nguồn gốc
         lunch ${{ env.DEVICE_NAME }}-userdebug
         make -j$(nproc) iso_img
 
@@ -100,7 +104,7 @@ jobs:
         tag_name: "LineageOS-15.1-x86-microG-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 + microG (Build #${{ github.run_number }})"
         body: |
-          Bản build sạch chỉnh chu tích hợp sẵn microG chạy Native hoàn toàn, sync từ nguồn gốc công khai của Android-x86.
+          Bản build hoàn chỉnh tối ưu Python tách biệt, tích hợp microG.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
