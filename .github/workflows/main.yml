@@ -53,7 +53,7 @@ jobs:
         
         repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         
-        # Local Manifest chuẩn xác: Chỉ gỡ bỏ những phân vùng thực sự bị trùng lặp
+        # Local Manifest: Đổi revision sang oreo-x86 - Nhánh chuẩn chứa driver PC Android 8.1
         mkdir -p .repo/local_manifests
         echo '<?xml version="1.0" encoding="UTF-8"?>
         <manifest>
@@ -63,13 +63,13 @@ jobs:
           <remove-project path="device/generic/x86" />
           <remove-project path="device/generic/x86_64" />
           
-          <project path="device/generic/common" name="device_generic_common" remote="ax86" revision="refs/heads/magnum" />
-          <project path="device/generic/x86" name="device_generic_x86" remote="ax86" revision="refs/heads/magnum" />
-          <project path="device/generic/x86_64" name="device_generic_x86_64" remote="ax86" revision="refs/heads/magnum" />
-          <project path="kernel/x86" name="kernel" remote="ax86" revision="refs/heads/magnum" />
+          <project path="device/generic/common" name="device_generic_common" remote="ax86" revision="refs/heads/oreo-x86" />
+          <project path="device/generic/x86" name="device_generic_x86" remote="ax86" revision="refs/heads/oreo-x86" />
+          <project path="device/generic/x86_64" name="device_generic_x86_64" remote="ax86" revision="refs/heads/oreo-x86" />
+          <project path="kernel/x86" name="kernel" remote="ax86" revision="refs/heads/oreo-x86" />
         </manifest>' > .repo/local_manifests/x86.xml
 
-        # Tiến hành đồng bộ mã nguồn sạch sẽ
+        # Đồng bộ hóa toàn bộ mã nguồn
         repo sync -c -j4 --force-sync --no-tags
 
     - name: Inject microG & Patch System
@@ -120,7 +120,7 @@ jobs:
         tag_name: "LineageOS-15.1-PC-microG-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 + microG (Build #${{ github.run_number }})"
         body: |
-          Bản build hoàn chỉnh sửa lỗi phân tách cấu trúc gỡ bỏ dự án cục bộ, tích hợp microG.
+          Bản build sửa lỗi chính xác nhánh phân phối driver PC oreo-x86, tích hợp microG.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
