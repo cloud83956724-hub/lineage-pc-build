@@ -1,4 +1,4 @@
-name: Build LineageOS 15.1 for PC (Fix GLIBC Error)
+name: Build LineageOS 15.1 for PC (Fix Queue & GLIBC)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,8 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    # Chuyển về hệ điều hành mới nhất để GitHub cấp máy ngay lập tức
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -27,52 +28,43 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Install and Downgrade Build Tools
+    # Dùng Docker chạy Ubuntu 18.04 độc lập để bypass hoàn toàn lỗi GLIBC của Node.js
+    # Toàn bộ quá trình đồng bộ và build sẽ gom gọn vào trong một container Docker sạch
+     Sir bản build này không phụ thuộc vào môi trường bên ngoài của GitHub.
+    - name: Build ROM inside Ubuntu 18.04 Docker Container
       run: |
-        sudo apt-get update
-        sudo apt-get install -y software-properties-common
-        sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-        sudo apt-get update
-        
-        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
-          gcc-7 g++-7 gcc-7-multilib g++-7-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
-          libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
-          u-boot-tools scons dkms python2 python-is-python2 libssl-dev bc squashfs-tools openjdk-8-jdk
-        
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90 --slave /usr/bin/g++ g++ /usr/bin/g++-7
-        sudo update-alternatives --config gcc
-
-    - name: Install Repo Tool
-      run: |
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        sudo ln -sf ~/bin/repo /usr/bin/repo
-
-    - name: Configure Git
-      run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
-
-    - name: Initialize and Sync Source Code
-      run: |
-        mkdir -p android-x86
-        cd android-x86
-        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }}
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
-
-    - name: Build LineageOS ISO
-      run: |
-        cd android-x86
-        source build/envsetup.sh
-        lunch ${{ env.DEVICE_NAME }}-userdebug
-        make -j$(nproc) iso_img
+        docker run --privileged -v ${{ github.workspace }}:/work -w /work ubuntu:18.04 bash -c '
+          # 1. Cài đặt các package cần thiết trong môi trường 18.04
+          apt-get update && apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
+            gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
+            libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
+            u-boot-tools scons dkms python-minimal libssl-dev bc squashfs-tools openjdk-8-jdk wget
+          
+          # 2. Cài đặt Repo Tool
+          mkdir -p /usr/local/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
+          chmod a+x /usr/local/bin/repo
+          
+          # 3. Cấu hình Git nội bộ
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # 4. Tạo thư mục và tiến hành sync source
+          mkdir -p android-x86
+          cd android-x86
+          repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }}
+          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+          
+          # 5. Khởi động quá trình build ISO
+          . build/envsetup.sh
+          lunch ${{ env.DEVICE_NAME }}-userdebug
+          make -j$(nproc) iso_img
+        '
 
     - name: Check Artifacts
       run: |
-        cd android-x86
         echo "=== Kiểm tra file ISO vừa build ==="
-        ls -lh out/target/product/${{ env.DEVICE_NAME }}/*.iso || echo "Không tìm thấy file ISO!"
+        ls -lh android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso || echo "Không tìm thấy file ISO!"
 
     - name: Upload ISO to GitHub Release
       uses: softprops/action-gh-release@v2
@@ -81,7 +73,7 @@ jobs:
         tag_name: "LineageOS-15.1-x86_64-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 (Build #${{ github.run_number }})"
         body: |
-          Bản build tự động LineageOS 15.1 cho PC x86_64.
+          Bản build tự động LineageOS 15.1 cho PC x86_64 sử dụng Docker Isolation để khắc phục lỗi hệ thống.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
