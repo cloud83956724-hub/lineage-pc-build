@@ -53,16 +53,16 @@ jobs:
         
         repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         
-        # Tạo local manifest thông minh: Xóa các project trùng lặp của LineageOS rồi đè driver PC vào
+        # Sửa đổi Local Manifest: Sử dụng thuộc tính 'path' để gỡ bỏ chính xác các repo mặc định bị trùng
         mkdir -p .repo/local_manifests
         echo '<?xml version="1.0" encoding="UTF-8"?>
         <manifest>
           <remote name="ax86" fetch="https://github.com/android-x86" />
           
-          <remove-project name="android_device_generic_common" />
-          <remove-project name="android_device_generic_x86" />
-          <remove-project name="android_device_generic_x86_64" />
-          <remove-project name="android_kernel_x86" />
+          <remove-project path="device/generic/common" />
+          <remove-project path="device/generic/x86" />
+          <remove-project path="device/generic/x86_64" />
+          <remove-project path="kernel/x86" />
           
           <project path="device/generic/common" name="device_generic_common" remote="ax86" revision="refs/heads/magnum" />
           <project path="device/generic/x86" name="device_generic_x86" remote="ax86" revision="refs/heads/magnum" />
@@ -106,7 +106,6 @@ jobs:
         export LC_ALL=C
         
         source build/envsetup.sh
-        # Chạy lệnh lunch nạp cấu hình target x86_64 PC
         lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
         make -j$(nproc) iso_img
 
@@ -122,7 +121,7 @@ jobs:
         tag_name: "LineageOS-15.1-PC-microG-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 + microG (Build #${{ github.run_number }})"
         body: |
-          Bản build hoàn chỉnh sử dụng kỹ thuật loại bỏ xung đột Local Manifest, tích hợp microG.
+          Bản build hoàn chỉnh sử dụng cơ chế định vị Path Local Manifest ổn định cao.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
