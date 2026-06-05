@@ -10,7 +10,6 @@ env:
 
 jobs:
   build:
-    # Dùng Ubuntu 20.04 để tương thích với Node 20 của GitHub Actions hiện tại
     runs-on: ubuntu-20.04
     permissions:
       contents: write
@@ -28,24 +27,18 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # Giải pháp thay thế: Cài đặt các package đời cũ trực tiếp lên Ubuntu 20.04 
-    # kết hợp với hạ cấp GCC/G++ và Python về đúng chuẩn của năm 2018.
-     Silber băm nhỏ môi trường để tránh xung đột GLIBC.
     - name: Install and Downgrade Build Tools
       run: |
         sudo apt-get update
         sudo apt-get install -y software-properties-common
-        # Thêm repo chứa GCC 7 (Trình biên dịch chuẩn của Ubuntu 18.04)
         sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
         sudo apt-get update
         
-        # Cài đặt các công cụ build cần thiết
         sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
           gcc-7 g++-7 gcc-7-multilib g++-7-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
           libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
           u-boot-tools scons dkms python2 python-is-python2 libssl-dev bc squashfs-tools openjdk-8-jdk
         
-        # Ép hệ thống sử dụng GCC 7 và G++ 7 làm mặc định thay vì bản mới hơn
         sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90 --slave /usr/bin/g++ g++ /usr/bin/g++-7
         sudo update-alternatives --config gcc
 
@@ -89,7 +82,6 @@ jobs:
         name: "LineageOS 15.1 PC x86_64 (Build #${{ github.run_number }})"
         body: |
           Bản build tự động LineageOS 15.1 cho PC x86_64.
-          Sử dụng môi trường Ubuntu 20.04 hạ cấp GCC-7 để bypass lỗi Node.js GLIBC.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
