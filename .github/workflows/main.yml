@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  ROM_URL: "https://osdn.net/projects/android-x86/scm/git/manifest"
+  ROM_URL: "https://github.com/android-x86/manifest"
   ROM_BRANCH: "lineage-15.1"
   DEVICE_NAME: "android_x86_64"
 
@@ -64,7 +64,7 @@ jobs:
         tag_name: "LineageOS-15.1-x86_64-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 (Build #${{ github.run_number }})"
         body: |
-          Bản build tự động LineageOS 15.1 cho PC x86_64.
+          Bản build tự động LineageOS 15.1 cho PC x86_64 sử dụng link nguồn GitHub mượt mà.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
