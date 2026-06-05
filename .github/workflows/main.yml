@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 env:
-  ROM_URL: "https://github.com/LineageOS-x86/manifest"
-  ROM_BRANCH: "lineage-15.1"
+  ROM_URL: "https://github.com/android-x86/manifest"
+  ROM_BRANCH: "oreo-x86" # Nhánh chuẩn xác 100% của Android-x86 trên GitHub
   DEVICE_NAME: "android_x86_64"
 
 jobs:
@@ -32,7 +32,6 @@ jobs:
           libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
           u-boot-tools scons dkms bc squashfs-tools openjdk-8-jdk wget
         
-        # Sua lai phan lien ket Python 2 cho chuan xac, khong gay xung dot he thong
         sudo apt-get install -y python2-minimal
         sudo ln -sf /usr/bin/python2 /usr/bin/python
 
@@ -58,7 +57,7 @@ jobs:
     - name: Inject microG & Patch System
       run: |
         cd android-x86
-        echo "=== Nhung microG vao nguon ==="
+        echo "=== Nhung microG vao he thong ==="
         mkdir -p vendor/lineage/prebuilt/common/priv-app/GmsCore
         mkdir -p vendor/lineage/prebuilt/common/priv-app/GsfProxy
         mkdir -p vendor/lineage/prebuilt/common/app/FakeStore
@@ -67,16 +66,16 @@ jobs:
         wget -O vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk https://microg.org/fdroid/repo/com.google.android.gsf.login-20.apk
         wget -O vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk https://microg.org/fdroid/repo/com.android.vending-20.apk
 
+        # Kiểm tra file makefile của Android-x86 để nhúng lệnh copy APK vào ISO
         MK_FILE=""
-        if [ -f "vendor/lineage/config/common.mk" ]; then
-          MK_FILE="vendor/lineage/config/common.mk"
-        elif [ -f "vendor/cm/config/common.mk" ]; then
-          MK_FILE="vendor/cm/config/common.mk"
-        else
+        if [ -f "device/generic/common/device.mk" ]; then
           MK_FILE="device/generic/common/device.mk"
+        else
+          MK_FILE="\$(find . -name "device.mk" | head -n 1)"
         fi
         
-        echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> $MK_FILE
+        echo "Ghi cau hinh vao file: \$MK_FILE"
+        echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> \$MK_FILE
 
     - name: Build LineageOS ISO
       run: |
@@ -85,7 +84,8 @@ jobs:
         export LC_ALL=C
         
         source build/envsetup.sh
-        lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
+        # Chạy lệnh lunch trực tiếp theo cấu hình thiết bị x86_64 của mã nguồn gốc
+        lunch ${{ env.DEVICE_NAME }}-userdebug
         make -j$(nproc) iso_img
 
     - name: Check Artifacts
@@ -100,7 +100,7 @@ jobs:
         tag_name: "LineageOS-15.1-x86-microG-${{ github.run_number }}"
         name: "LineageOS 15.1 PC x86_64 + microG (Build #${{ github.run_number }})"
         body: |
-          Bản build sạch chỉnh chu tích hợp sẵn microG chạy Native hoàn toàn.
+          Bản build sạch chỉnh chu tích hợp sẵn microG chạy Native hoàn toàn, sync từ nguồn gốc công khai của Android-x86.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
