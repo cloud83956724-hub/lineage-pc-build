@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
 
 env:
-  ROM_URL: "https://github.com/android-x86/manifest"
-  ROM_BRANCH: "lineage-15.1-x86" # Nhánh chính thức tích hợp LineageOS của tổ chức android-x86
+  # Chuyển sang Manifest được tối ưu và sửa lỗi kết nối nguồn cho kiến trúc x86
+  ROM_URL: "https://github.com/LineageOS-x86/manifest"
+  ROM_BRANCH: "lineage-15.1"
   DEVICE_NAME: "android_x86_64"
 
 jobs:
@@ -50,12 +51,18 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Thử nghiệm khởi tạo linh hoạt: Nếu nhánh lineage-15.1-x86 không khớp, hệ thống tự động fallback về nhánh oreo-x86 chuẩn mã nguồn mở
-        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1 || \
-        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b oreo-mcts --no-clone-bundle --depth=1 || \
-        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
+        # Khởi tạo từ kho manifest sửa đổi chuyên dụng cho LineageOS-x86
+        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         
-        python3 /usr/local/bin/repo sync -c -j4 --force-sync --no-tags --no-clone-bundle
+        # Ép buộc sửa đổi các URL bị sập trong manifest sang server mirror hoạt động nếu có
+        if [ -f ".repo/manifests/default.xml" ]; then
+          sed -i 's|fetch="android-x86"|fetch="https://github.com/android-x86"|g' .repo/manifests/default.xml
+          sed -i 's|fetch="..編"|fetch="https://github.com/LineageOS"|g' .repo/manifests/default.xml
+        fi
+
+        # Đồng bộ hóa với các cờ tối ưu chống drop kết nối giữa chừng
+        python3 /usr/local/bin/repo sync -c -j2 --force-sync --no-tags --no-clone-bundle --optimized-fetch || \
+        python3 /usr/local/bin/repo sync -c -j1 --force-sync --no-tags --no-clone-bundle
 
     - name: Inject microG & Patch System
       run: |
@@ -100,9 +107,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Native-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Fallback Multi-Branch) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (Lineage-x86 Mirror) (Build #${{ github.run_number }})"
         body: |
-          Cấu hình bổ sung cơ chế Fallback tự động nhận diện nhánh manifest từ kho lưu trữ Android-x86.
+          Bản build tối ưu hóa nguồn nạp mã nguồn, chuyển đổi toàn bộ fetch link về cụm máy chủ cộng đồng LineageOS-x86.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
