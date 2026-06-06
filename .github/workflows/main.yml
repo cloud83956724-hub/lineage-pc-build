@@ -44,39 +44,63 @@ jobs:
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
 
-    - name: Initialize and Sync Source Code
+    - name: Infinite Path Sync (Try All Paths Until Success)
       run: |
         mkdir -p android-x86
         cd android-x86
         
-        # Khởi tạo manifest với cấu hình tối ưu dung lượng
+        echo "=== Khởi tạo Manifest gốc ==="
         repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
-        echo "=== Bắt đầu vòng lặp Sync thông minh chống nghẽn mạng ==="
+        # Danh sách các con đường (Mirrors) có thể đi cứu cánh cho lỗi 404 Google
+        MIRRORS=(
+          "https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"
+          "https://mirrors.ustc.edu.cn/aosp/"
+          "https://mirrors.aliyun.com/img/aosp/"
+        )
+        
         success=false
-        # Thử đi thử lại tối đa 5 lần nếu máy chủ từ chối hoặc đứt kết nối
-        for i in {1..5}; do
-          echo "Nỗ lực đồng bộ lần thứ $i..."
-          if [ $i -eq 1 ]; then
-            # Lần đầu tiên chạy 4 luồng cho nhanh
-            repo sync -c -j4 --force-sync --no-tags --no-clone-bundle && success=true && break
-          elif [ $i -eq 2 ]; then
-            # Lần 2 hạ xuống 2 luồng để giảm tải chèn ép băng thông
-            repo sync -c -j2 --force-sync --no-tags --no-clone-bundle && success=true && break
-          else
-            # Các lần sau kiên trì tải từng gói một để lượm nốt các gói lỗi (-j1)
-            repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast && success=true && break
-          fi
-          echo "Lần sync thứ $i thất bại do nghẽn mạng. Nghỉ 15 giây rồi thử lại..."
-          sleep 15
-        done
-
-        if [ "$success" = false ]; then
-          echo "Đã thử sync 5 lần liên tiếp nhưng máy chủ Git/AOSP vẫn chặn kết nối."
-          echo "Vẫn tiếp tục cố đấm ăn xôi chuyển sang bước build xem có vớt vát được gì không..."
+        
+        echo "=== [ĐƯỜNG A] Thử nghiệm đồng bộ mặc định từ Google ==="
+        if repo sync -c -j4 --force-sync --no-tags --no-clone-bundle; then
+          success=true
         fi
         
-        echo "=== Kiểm tra lại thư mục sau khi kết thúc chu kỳ sync ==="
+        # Nếu đường A gục ngã, bắt đầu duyệt qua các con đường khác
+        if [ "$success" = false ]; then
+          echo "Đường A sập (Lỗi 404 hoặc nghẽn mạng). Kích hoạt chiến dịch chuyển hướng!"
+          
+          for mirror in "${MIRRORS[@]}"; do
+            echo "--------------------------------------------------------"
+            echo "ĐANG CHUYỂN HƯỚNG SANG CON ĐƯỜNG MỚI: $mirror"
+            echo "--------------------------------------------------------"
+            
+            # Vá lại toàn bộ liên kết trong cấu trúc .repo sang Mirror mới
+            if [ -f ".repo/manifests/default.xml" ]; then
+              sed -i "s|fetch=\"https://android.googlesource.com/\"|fetch=\"$mirror\"|g" .repo/manifests/default.xml
+              sed -i "s|fetch=\"..\"|fetch=\"$mirror\"|g" .repo/manifests/default.xml
+            fi
+            if [ -f ".repo/manifest.xml" ]; then
+              sed -i "s|fetch=\"https://android.googlesource.com/\"|fetch=\"$mirror\"|g" .repo/manifest.xml
+              sed -i "s|fetch=\"..\"|fetch=\"$mirror\"|g" .repo/manifest.xml
+            fi
+            
+            # Thử sync lại với luồng tải an toàn hơn để tránh bị block bớ
+            if repo sync -c -j2 --force-sync --no-tags --no-clone-bundle; then
+              echo "Thành công rực rỡ tại con đường: $mirror!"
+              success=true
+              break
+            else
+              echo "Con đường $mirror vẫn không qua được, chuẩn bị đổi ngả..."
+            fi
+          done
+        fi
+        
+        if [ "$success" = false ]; then
+          echo "Tất cả các con đường cứu trợ đều bị chặn. Ép hệ thống chạy kiểm tra vớt vát..."
+        fi
+        
+        echo "=== Thư mục hiện tại sau chiến dịch ==="
         ls -la
 
     - name: Build LineageOS ISO
@@ -90,7 +114,7 @@ jobs:
           lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
           make -j$(nproc) iso_img
         else
-          echo "Lỗi nghiêm trọng: File build/envsetup.sh vẫn không xuất hiện. Mã nguồn chưa được tải trọn vẹn!"
+          echo "Không thể tìm thấy công cụ thiết lập build. Mã nguồn chưa đầy đủ!"
           exit 1
         fi
 
@@ -105,7 +129,7 @@ jobs:
         tag_name: "LineageOS-PC-CleanBuild-${{ github.run_number }}"
         name: "LineageOS PC (Clean Build) (Build #${{ github.run_number }})"
         body: |
-          Bản build sạch (Clean Build), tích hợp cơ chế tự động kết nối lại khi tải mã nguồn (Auto-Retry Loop).
+          Bản build tích hợp thuật toán 'Vạn dặm tìm đường': Tự động đổi ngả sang Tsinghua, USTC, hoặc Aliyun khi một nguồn bị sập.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
