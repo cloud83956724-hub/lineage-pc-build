@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
 
 env:
-  # Quay lại dùng nguồn HTTPS chính chủ của Android-x86, chạy trong môi trường cũ sẽ không lo lỗi Git mới
   ROM_URL: "https://osdn.net/projects/android-x86/scm/git/manifest"
   ROM_BRANCH: "lineage-15.1"
   DEVICE_NAME: "android_x86_64"
@@ -13,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # Ép GitHub Actions chạy toàn bộ các bước bên trong Container Ubuntu 16.04 chuẩn cổ đại
+    # Tiếp tục chiến đấu trong hộp Docker 16.04
     container:
       image: ubuntu:16.04
 
@@ -21,19 +20,15 @@ jobs:
       contents: write
 
     steps:
-    # Bước này chạy lệnh của Host để dọn dẹp ổ đĩa trước khi mở hộp Docker
-    - name: Free Disk Space (Host Side)
-      run: |
-        df -h
-        # Vì chạy trong container chung nên ta sẽ tối ưu trực tiếp dung lượng khi chạy bước sau
-
     - name: Install Fundamental Tools inside Container
       run: |
-        # Cập nhật nguồn cho Ubuntu 16.04 (Sử dụng kho lưu trữ cũ ESM/Main)
-        sed -i -e 's/archive.ubuntu.com/archive.org/g' /etc/apt/sources.list
-        apt-get update
+        # Đổi sang kho lưu trữ chính thức dành cho các bản Ubuntu cũ (Old Releases)
+        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial main restricted universe multiverse" > /etc/apt/sources.list
+        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial-updates main restricted universe multiverse" >> /etc/apt/sources.list
+        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial-backports main restricted universe multiverse" >> /etc/apt/sources.list
+        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial-security main restricted universe multiverse" >> /etc/apt/sources.list
         
-        # Cài đặt các công cụ cơ bản để có thể dùng lệnh sudo, curl, git
+        apt-get update
         apt-get install -y sudo curl git gnupg openjdk-8-jdk wget
 
     - name: Install Android Build Dependencies (Pure Ubuntu 16.04)
@@ -54,15 +49,13 @@ jobs:
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        # Bật cấu hình cho phép Git chạy với các repo cũ không sợ cơ chế bảo mật mới chặn
-        git config --global daemon.receivepack true
 
     - name: Initialize and Sync Source Code
       run: |
         mkdir -p android-x86
         cd android-x86
         
-        # Trong Ubuntu 16.04, python mặc định là 2.7, hoàn toàn trùng khớp với Repo Tool đời cũ
+        # Chạy repo init trong môi trường Python 2.7 mặc định của Ubuntu 16.04
         repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         repo sync -c -j4 --force-sync --no-tags
 
@@ -96,7 +89,6 @@ jobs:
         export WITHOUT_CHECK_API=true
         export LC_ALL=C
         
-        # Môi trường 16.04 thuần khiết, gọi thẳng lệnh build gốc
         source build/envsetup.sh
         lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
         make -j$(nproc) iso_img
@@ -110,9 +102,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Docker-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Ubuntu 16.04 Toi Uu) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (Ubuntu 16.04 Fix) (Build #${{ github.run_number }})"
         body: |
-          Bản build đột phá chạy trên môi trường Container Ubuntu 16.04 gốc, loại bỏ xung đột hệ thống mới.
+          Bản build sửa đổi hoàn chỉnh danh sách repo cũ của Ubuntu 16.04, chạy mượt mà.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
