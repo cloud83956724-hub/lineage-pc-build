@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
 
 env:
-  # Kho manifest chuẩn cấu trúc và ổn định cho các bản dựng x86
   ROM_URL: "https://github.com/android-x86/manifest"
   DEVICE_NAME: "android_x86_64"
 
@@ -50,37 +49,15 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Giải pháp: Không chỉ định đích danh nhánh, để repo tự động lấy nhánh manifest mặc định (Default Branch) hoạt động tốt nhất của dự án
+        # Khởi tạo repo dựa trên nhánh mặc định của android-x86
         repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
-        echo "=== Bắt đầu Sync lần 1: Bỏ qua lỗi nhánh lẻ của Google AOSP ==="
-        repo sync -c -j4 --force-sync --no-tags --no-clone-bundle --ignore-broken-branches || true
+        echo "=== Bắt đầu Sync mã nguồn với các tham số chuẩn ==="
+        # Sử dụng --force-sync và --no-tags để tăng tốc và dọn dẹp xung đột cấu trúc cũ
+        repo sync -c -j4 --force-sync --no-tags --no-clone-bundle || true
         
-        echo "=== Bắt đầu Sync lần 2: Nhặt nốt các gói cốt lõi ==="
-        repo sync -c -j4 --force-sync --ignore-broken-branches || echo "Bỏ qua cảnh báo sync để chuyển sang build!"
-
-    - name: Inject microG & Patch System
-      run: |
-        cd android-x86
-        echo "=== Nhúng microG ==="
-        mkdir -p vendor/lineage/prebuilt/common/priv-app/GmsCore
-        mkdir -p vendor/lineage/prebuilt/common/priv-app/GsfProxy
-        mkdir -p vendor/lineage/prebuilt/common/app/FakeStore
-
-        wget -O vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk https://microg.org/fdroid/repo/com.google.android.gms-240913006.apk
-        wget -O vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk https://microg.org/fdroid/repo/com.google.android.gsf.login-20.apk
-        wget -O vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk https://microg.org/fdroid/repo/com.android.vending-20.apk
-
-        MK_FILE=""
-        if [ -f "device/generic/common/device.mk" ]; then
-          MK_FILE="device/generic/common/device.mk"
-        elif [ -f "vendor/lineage/config/common.mk" ]; then
-          MK_FILE="vendor/lineage/config/common.mk"
-        fi
-        
-        if [ -n "$MK_FILE" ]; then
-          echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> $MK_FILE
-        fi
+        echo "=== Kiểm tra lại thư mục sau khi sync ==="
+        ls -la
 
     - name: Build LineageOS ISO
       run: |
@@ -88,23 +65,29 @@ jobs:
         export WITHOUT_CHECK_API=true
         export LC_ALL=C
         
-        source build/envsetup.sh
-        # Thử nghiệm linh hoạt cấu hình nạp môi trường phù hợp với cấu trúc cây thư mục của manifest
-        lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
-        make -j$(nproc) iso_img
+        # Kiểm tra xem file cấu hình môi trường có tồn tại không trước khi nạp
+        if [ -f "build/envsetup.sh" ]; then
+          source build/envsetup.sh
+          # Tự động thử nghiệm các biến thể lunch dựa trên cấu trúc cây thư mục Android-x86
+          lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
+          make -j$(nproc) iso_img
+        else
+          echo "Không tìm thấy build/envsetup.sh. Quá trình sync mã nguồn có thể đã gặp lỗi nặng."
+          exit 1
+        fi
 
     - name: Check Artifacts
       run: |
-        echo "=== Kiểm tra file ISO ==="
+        echo "=== Kiểm tra đầu ra file ISO ==="
         ls -lh android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso || ls -lh android-x86/out/target/product/*/*.iso || echo "Khong tim thay file ISO!"
 
     - name: Upload ISO to GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: "LineageOS-PC-AutoBranch-${{ github.run_number }}"
-        name: "LineageOS PC (Auto Branch Build) (Build #${{ github.run_number }})"
+        tag_name: "LineageOS-PC-CleanBuild-${{ github.run_number }}"
+        name: "LineageOS PC (Clean Build) (Build #${{ github.run_number }})"
         body: |
-          Bản build tự động nhận diện nhánh manifest từ cấu hình gốc, giúp vượt qua lỗi UpdateManifestError.
+          Bản build sạch (Clean Build), đã loại bỏ microG để tối ưu độ ổn định và sửa lỗi tham số đồng bộ `repo sync`.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
