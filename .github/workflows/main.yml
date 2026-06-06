@@ -49,14 +49,34 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Khởi tạo repo dựa trên nhánh mặc định của android-x86
+        # Khởi tạo manifest với cấu hình tối ưu dung lượng
         repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
-        echo "=== Bắt đầu Sync mã nguồn với các tham số chuẩn ==="
-        # Sử dụng --force-sync và --no-tags để tăng tốc và dọn dẹp xung đột cấu trúc cũ
-        repo sync -c -j4 --force-sync --no-tags --no-clone-bundle || true
+        echo "=== Bắt đầu vòng lặp Sync thông minh chống nghẽn mạng ==="
+        success=false
+        # Thử đi thử lại tối đa 5 lần nếu máy chủ từ chối hoặc đứt kết nối
+        for i in {1..5}; do
+          echo "Nỗ lực đồng bộ lần thứ $i..."
+          if [ $i -eq 1 ]; then
+            # Lần đầu tiên chạy 4 luồng cho nhanh
+            repo sync -c -j4 --force-sync --no-tags --no-clone-bundle && success=true && break
+          elif [ $i -eq 2 ]; then
+            # Lần 2 hạ xuống 2 luồng để giảm tải chèn ép băng thông
+            repo sync -c -j2 --force-sync --no-tags --no-clone-bundle && success=true && break
+          else
+            # Các lần sau kiên trì tải từng gói một để lượm nốt các gói lỗi (-j1)
+            repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast && success=true && break
+          fi
+          echo "Lần sync thứ $i thất bại do nghẽn mạng. Nghỉ 15 giây rồi thử lại..."
+          sleep 15
+        done
+
+        if [ "$success" = false ]; then
+          echo "Đã thử sync 5 lần liên tiếp nhưng máy chủ Git/AOSP vẫn chặn kết nối."
+          echo "Vẫn tiếp tục cố đấm ăn xôi chuyển sang bước build xem có vớt vát được gì không..."
+        fi
         
-        echo "=== Kiểm tra lại thư mục sau khi sync ==="
+        echo "=== Kiểm tra lại thư mục sau khi kết thúc chu kỳ sync ==="
         ls -la
 
     - name: Build LineageOS ISO
@@ -65,14 +85,12 @@ jobs:
         export WITHOUT_CHECK_API=true
         export LC_ALL=C
         
-        # Kiểm tra xem file cấu hình môi trường có tồn tại không trước khi nạp
         if [ -f "build/envsetup.sh" ]; then
           source build/envsetup.sh
-          # Tự động thử nghiệm các biến thể lunch dựa trên cấu trúc cây thư mục Android-x86
           lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
           make -j$(nproc) iso_img
         else
-          echo "Không tìm thấy build/envsetup.sh. Quá trình sync mã nguồn có thể đã gặp lỗi nặng."
+          echo "Lỗi nghiêm trọng: File build/envsetup.sh vẫn không xuất hiện. Mã nguồn chưa được tải trọn vẹn!"
           exit 1
         fi
 
@@ -87,7 +105,7 @@ jobs:
         tag_name: "LineageOS-PC-CleanBuild-${{ github.run_number }}"
         name: "LineageOS PC (Clean Build) (Build #${{ github.run_number }})"
         body: |
-          Bản build sạch (Clean Build), đã loại bỏ microG để tối ưu độ ổn định và sửa lỗi tham số đồng bộ `repo sync`.
+          Bản build sạch (Clean Build), tích hợp cơ chế tự động kết nối lại khi tải mã nguồn (Auto-Retry Loop).
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
