@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
 
 env:
+  # Kho manifest chuẩn cấu trúc và ổn định cho các bản dựng x86
   ROM_URL: "https://github.com/android-x86/manifest"
-  # Sửa đổi tên nhánh thành oreo-x86 để khớp chính xác với kho lưu trữ của Android-x86 trên GitHub
-  ROM_BRANCH: "oreo-x86"
   DEVICE_NAME: "android_x86_64"
 
 jobs:
@@ -51,8 +50,8 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Khởi tạo repo với nhánh oreo-x86 chuẩn trên GitHub
-        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
+        # Giải pháp: Không chỉ định đích danh nhánh, để repo tự động lấy nhánh manifest mặc định (Default Branch) hoạt động tốt nhất của dự án
+        repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
         echo "=== Bắt đầu Sync lần 1: Bỏ qua lỗi nhánh lẻ của Google AOSP ==="
         repo sync -c -j4 --force-sync --no-tags --no-clone-bundle --ignore-broken-branches || true
@@ -90,7 +89,7 @@ jobs:
         export LC_ALL=C
         
         source build/envsetup.sh
-        # Thử nghiệm linh hoạt giữa hậu tố lineage_ hoặc generic_ tùy thuộc vào cấu trúc cây thư mục oreo-x86
+        # Thử nghiệm linh hoạt cấu hình nạp môi trường phù hợp với cấu trúc cây thư mục của manifest
         lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
         make -j$(nproc) iso_img
 
@@ -102,10 +101,10 @@ jobs:
     - name: Upload ISO to GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: "LineageOS-15.1-OreoFixed-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Oreo-x86 Branch) (Build #${{ github.run_number }})"
+        tag_name: "LineageOS-PC-AutoBranch-${{ github.run_number }}"
+        name: "LineageOS PC (Auto Branch Build) (Build #${{ github.run_number }})"
         body: |
-          Bản build định tuyến lại chính xác nhánh oreo-x86 trên GitHub Manifest để tiến hành tải và biên dịch ROM.
+          Bản build tự động nhận diện nhánh manifest từ cấu hình gốc, giúp vượt qua lỗi UpdateManifestError.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
