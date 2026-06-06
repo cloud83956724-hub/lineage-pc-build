@@ -49,30 +49,41 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Sử dụng kho chuẩn xác nhất của android-x86, không chỉ định nhánh để lấy nhánh mặc định ổn định nhất (thường là oreo-x86 hoặc tương đương)
+        # Khởi tạo repo bằng kho mã nguồn android-x86 chính thức
         python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
-        echo "=== Bắt đầu vá Manifest lỗi link remote ==="
-        # Chuyển đổi các fetch url tương đối hoặc bị sập sang url tuyệt đối an toàn
-        if [ -f ".repo/manifests/default.xml" ]; then
-          # Thay thế các remote gốc của android-x86 về github chính thức
-          sed -i 's|fetch=".."|fetch="https://github.com/android-x86"|g' .repo/manifests/default.xml
-          sed -i 's|fetch="android-x86"|fetch="https://github.com/android-x86"|g' .repo/manifests/default.xml
-          # Sửa các remote của CyanogenMod/LineageOS cũ nếu có về Git chính thức hiện tại
-          sed -i 's|fetch="https://github.com/CyanogenMod"|fetch="https://github.com/LineageOS"|g' .repo/manifests/default.xml
-          echo "Đã vá xong file default.xml"
+        echo "=== BẮT ĐẦU VÁ TOÀN BỘ CẤU HÌNH MANIFEST ==="
+        MANIFEST_FILE=".repo/manifests/default.xml"
+        if [ -f "$MANIFEST_FILE" ]; then
+          # 1. Ép tất cả các chuỗi fetch trỏ về OSDN cũ chuyển hướng sang GitHub chính thức của android-x86
+          sed -i 's|fetch="https://osdn.net/projects/android-x86/scm/git/manifest"|fetch="https://github.com/android-x86"|g' $MANIFEST_FILE
+          sed -i 's|fetch="https://osdn.net/projects/android-x86/scm/git"|fetch="https://github.com/android-x86"|g' $MANIFEST_FILE
+          sed -i 's|fetch="osdn"|fetch="https://github.com/android-x86"|g' $MANIFEST_FILE
+          
+          # 2. Sửa các đường dẫn tương đối để đồng bộ hóa chuẩn xác
+          sed -i 's|fetch=".."|fetch="https://github.com/android-x86"|g' $MANIFEST_FILE
+          sed -i 's|fetch="android-x86"|fetch="https://github.com/android-x86"|g' $MANIFEST_FILE
+          
+          # 3. Chuyển đổi liên kết CyanogenMod lỗi thời về tổ chức LineageOS hiện tại
+          sed -i 's|fetch="https://github.com/CyanogenMod"|fetch="https://github.com/LineageOS"|g' $MANIFEST_FILE
+          
+          echo "Nội dung tệp manifest sau khi vá các remote:"
+          grep -i "fetch=" $MANIFEST_FILE | head -n 10
+        else
+          echo "Không tìm thấy tệp tin manifest để vá!"
+          exit 1
         fi
 
     - name: Sync Source Code
       run: |
         cd android-x86
-        # Đồng bộ hóa với số luồng thấp (-j2) để tránh bị GitHub chặn IP hoặc rớt gói tin giữa chừng
+        # Sử dụng 2 luồng tải để giữ kết nối ổn định, chống nghẽn băng thông giữa chừng
         python3 /usr/local/bin/repo sync -c -j2 --force-sync --no-tags --no-clone-bundle
 
     - name: Inject microG & Patch System
       run: |
         cd android-x86
-        echo "=== Nhung microG vao he thong ==="
+        echo "=== Nhúng microG vào hệ thống ==="
         mkdir -p vendor/lineage/prebuilt/common/priv-app/GmsCore
         mkdir -p vendor/lineage/prebuilt/common/priv-app/GsfProxy
         mkdir -p vendor/lineage/prebuilt/common/app/FakeStore
@@ -89,7 +100,7 @@ jobs:
         fi
         
         if [ -n "$MK_FILE" ]; then
-          echo "Ghi cau hinh vao file: $MK_FILE"
+          echo "Ghi cấu hình vào file: $MK_FILE"
           echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> $MK_FILE
         fi
 
@@ -105,16 +116,16 @@ jobs:
 
     - name: Check Artifacts
       run: |
-        echo "=== Kiem tra file ISO ==="
-        ls -lh android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso || ls -lh android-x86/out/target/product/*/*.iso || echo "Khong tim thay file ISO!"
+        echo "=== Kiểm tra file ISO ==="
+        ls -lh android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso || ls -lh android-x86/out/target/product/*/*.iso || echo "Không tìm thấy file ISO!"
 
     - name: Upload ISO to GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Native-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Manifest Patched) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (OSDN Bypassed) (Build #${{ github.run_number }})"
         body: |
-          Bản build sửa lỗi triệt để đường truyền remote bằng cách cấu hình động (sed patch) trực tiếp vào tệp tin manifest gốc.
+          Loại bỏ hoàn toàn sự phụ thuộc vào máy chủ OSDN bị sập bằng cách ép cấu hình manifest tải từ GitHub Mirror.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
