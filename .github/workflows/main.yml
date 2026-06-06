@@ -22,7 +22,6 @@ jobs:
       run: |
         sudo docker image prune --all --force
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        # Đảm bảo dọn sạch mọi rác rưởi của các lần chạy trước để không bị nghẽn Git
         rm -rf android-x86 .repo
         df -h
 
@@ -41,40 +40,51 @@ jobs:
         chmod a+x ~/bin/repo
         sudo ln -sf ~/bin/repo /usr/local/bin/repo
 
-    - name: Configure Git Identity with Timeout Fix
+    - name: Configure Git Identity
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        # Cấu hình ép Git phải tự ngắt và kết nối lại nếu bị đứng hình quá 300 giây
         git config --global http.lowSpeedLimit 1000
-        git config --global http.lowSpeedTime 300
+        git config --global http.lowSpeedTime 60
 
-    - name: Pure Tsinghua Sync (No Google, No Freeze)
+    - name: Initialize with USTC Mirror (Anti-Queue)
       run: |
         mkdir -p android-x86
         cd android-x86
         
-        echo "=== Khởi tạo Manifest Sạch ==="
+        echo "=== Khởi tạo Manifest và ép dùng luôn Mirror USTC ==="
         repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
-        echo "=== Bẻ lái vĩnh viễn sang Tsinghua ==="
+        # Bẻ lái bản đồ sang USTC (Đại học Khoa học Công nghệ TQ) để né hàng đợi Tsinghua
         if [ -f ".repo/manifests/default.xml" ]; then
-          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"|g' .repo/manifests/default.xml
-          sed -i 's|fetch=".."|fetch="https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"|g' .repo/manifests/default.xml
+          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifests/default.xml
+          sed -i 's|fetch=".."|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifests/default.xml
         fi
         if [ -f ".repo/manifest.xml" ]; then
-          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"|g' .repo/manifest.xml
+          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifest.xml
         fi
 
-        echo "=== Bắt đầu kéo mã nguồn với cơ chế chống nghẽn ==="
-        # Hạ xuống -j2 ngay từ đầu để giữ kết nối ổn định, không làm máy chủ Tsinghua chặn băng thông
-        # Thêm --fail-fast để nếu có gói nào lỗi thật thì báo ngay lập tức chứ không đứng im đợi chờ
-        if ! repo sync -c -j2 --force-sync --no-tags --no-clone-bundle --fail-fast; then
-          echo "Phát hiện gói bị kẹt, kích hoạt lệnh rà soát cưỡng bức..."
-          repo sync -c -j1 --force-sync --no-tags --no-clone-bundle
+    - name: Sync Source Code from USTC
+      run: |
+        cd android-x86
+        echo "=== Bắt đầu kéo mã nguồn từ USTC ==="
+        
+        success=false
+        # Chạy -j4 để kéo nhanh, nếu USTC ngon lành nó sẽ qua rất mượt
+        if repo sync -c -j4 --force-sync --no-tags --no-clone-bundle --fail-fast; then
+          success=true
+        else
+          echo "USTC gặp lỗi nhỏ, chạy rà soát lại với -j2..."
+          if repo sync -c -j2 --force-sync --no-tags --no-clone-bundle; then
+            success=true
+          fi
         fi
         
-        echo "=== Kiểm tra cấu trúc thư mục ==="
+        if [ "$success" = false ]; then
+          echo "Vẫn ép chuyển sang bước build..."
+        fi
+        
+        echo "=== Cấu trúc thư mục sau khi sync ==="
         ls -la
 
     - name: Build LineageOS ISO
@@ -88,7 +98,7 @@ jobs:
           lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
           make -j$(nproc) iso_img
         else
-          echo "Lỗi: Vẫn không lấy được tệp envsetup.sh!"
+          echo "Không tìm thấy tệp envsetup.sh!"
           exit 1
         fi
 
@@ -103,7 +113,7 @@ jobs:
         tag_name: "LineageOS-PC-CleanBuild-${{ github.run_number }}"
         name: "LineageOS PC (Clean Build) (Build #${{ github.run_number }})"
         body: |
-          Bản build phá vỡ tình trạng đóng băng (Anti-Freeze) bằng cách tối ưu tham số cấu hình kết nối Git thấp và ép dùng luồng an toàn.
+          Bản build bẻ lái sang USTC Mirror để né tránh hàng đợi quá tải (Queue Position 309) của Tsinghua.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
