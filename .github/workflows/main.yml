@@ -22,7 +22,6 @@ jobs:
     - name: Install Fundamental Tools inside Container
       run: |
         apt-get update
-        # Cài thêm python3 ở đây để gánh Repo Tool đời mới
         apt-get install -y sudo curl git gnupg openjdk-8-jdk wget python3
 
     - name: Install Android Build Dependencies (Pure Ubuntu 16.04)
@@ -33,10 +32,11 @@ jobs:
           libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
           u-boot-tools scons dkms bc squashfs-tools python-crypto
 
-    - name: Install Repo Tool (Legacy Compatible)
+    - name: Install Repo Tool (Legacy Python 2/3 Compatible)
       run: |
         mkdir -p /usr/local/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
+        # Tải phiên bản repo launcher cũ ổn định, không dùng cú pháp f-string đời mới
+        curl https://storage.googleapis.com/git-repo-downloads/repo-1 > /usr/local/bin/repo
         chmod a+x /usr/local/bin/repo
 
     - name: Configure Git Identity
@@ -49,8 +49,9 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
-        repo sync -c -j4 --force-sync --no-tags
+        # Gọi trực tiếp bằng python thông thường (Python 2.7 đi kèm máy) để khớp với launcher cũ
+        python /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
+        python /usr/local/bin/repo sync -c -j4 --force-sync --no-tags
 
     - name: Inject microG & Patch System
       run: |
@@ -95,9 +96,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Docker-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Ubuntu 16.04 Python3 Fix) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (Ubuntu 16.04 Repo-1 Fix) (Build #${{ github.run_number }})"
         body: |
-          Bản build bổ sung Python3 cho môi trường Docker 16.04 để chạy Repo Tool thành công.
+          Bản build hạ cấp công cụ repo xuống phiên bản repo-1 để tương thích hoàn toàn với Python trên Ubuntu 16.04.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
