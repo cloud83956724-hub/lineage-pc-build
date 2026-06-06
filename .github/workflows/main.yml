@@ -10,7 +10,6 @@ env:
 
 jobs:
   build:
-    # Đổi hẳn sang pool máy chủ 22.04 để thoát khỏi hàng đợi bị nghẽn của 20.04 và 24.04
     runs-on: ubuntu-22.04 
 
     permissions:
@@ -26,13 +25,14 @@ jobs:
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
         df -h
 
-    - name: Install Android Build Dependencies (Ubuntu 22.04 Optimized)
+    - name: Install Android Build Dependencies (Ubuntu 22.04 Strict)
       run: |
         sudo apt-get update
+        # Lược bỏ các gói gây lỗi apt trên 22.04, giữ lại bộ khung build chuẩn của Android
         sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
-          gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses-dev x11proto-core-dev \
-          libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
-          u-boot-tools scons dkms bc squashfs-tools python3-cryptography python-is-python3
+          gcc-multilib g++-multilib libc6-dev-i386 x11proto-core-dev \
+          libx11-dev lib32z1-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
+          u-boot-tools scons dkms bc squashfs-tools
 
     - name: Install Repo Tool
       run: |
@@ -51,8 +51,9 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
-        repo sync -c -j4 --force-sync --no-tags --no-clone-bundle
+        # Ép Repo Tool sử dụng python3 hệ thống mà không cần cài thêm gói bắc cầu
+        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
+        python3 /usr/local/bin/repo sync -c -j4 --force-sync --no-tags --no-clone-bundle
 
     - name: Inject microG & Patch System
       run: |
@@ -97,9 +98,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Native-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Ubuntu 22.04 Fix) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (Ubuntu 22.04 Strict) (Build #${{ github.run_number }})"
         body: |
-          Bản build sạch chạy trên môi trường Ubuntu 22.04 Native để lách hàng đợi, sửa đổi danh sách gói cài đặt chính xác.
+          Bản build lược bỏ tối đa các gói apt xung đột trên 22.04, kích hoạt trực tiếp repo bằng python3.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
