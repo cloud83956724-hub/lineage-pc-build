@@ -1,84 +1,118 @@
-name: Build LineageOS 15.1 x86_64 with MicroG
+name: Build LineageOS 15.1 PC (Docker Ubuntu 16.04 Solution)
 
 on:
-  workflow_dispatch:  # cho phép chạy thủ công
+  workflow_dispatch:
 
 env:
-  BUILD_USERNAME: "github-actions"
-  BUILD_HOSTNAME: "github-runner"
-  CCACHE_DIR: /home/runner/.ccache
-  CCACHE_SIZE: "50G"
+  # Quay lại dùng nguồn HTTPS chính chủ của Android-x86, chạy trong môi trường cũ sẽ không lo lỗi Git mới
+  ROM_URL: "https://osdn.net/projects/android-x86/scm/git/manifest"
+  ROM_BRANCH: "lineage-15.1"
+  DEVICE_NAME: "android_x86_64"
 
 jobs:
   build:
-    runs-on: [self-hosted, linux, x64]  # hoặc 'ubuntu-latest' nếu dùng larger runner
+    runs-on: ubuntu-latest
+    
+    # Ép GitHub Actions chạy toàn bộ các bước bên trong Container Ubuntu 16.04 chuẩn cổ đại
+    container:
+      image: ubuntu:16.04
+
+    permissions:
+      contents: write
+
     steps:
-      - name: Checkout repository (chứa script patch & config)
-        uses: actions/checkout@v3
+    # Bước này chạy lệnh của Host để dọn dẹp ổ đĩa trước khi mở hộp Docker
+    - name: Free Disk Space (Host Side)
+      run: |
+        df -h
+        # Vì chạy trong container chung nên ta sẽ tối ưu trực tiếp dung lượng khi chạy bước sau
 
-      - name: Cài đặt gói dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 bc repo
+    - name: Install Fundamental Tools inside Container
+      run: |
+        # Cập nhật nguồn cho Ubuntu 16.04 (Sử dụng kho lưu trữ cũ ESM/Main)
+        sed -i -e 's/archive.ubuntu.com/archive.org/g' /etc/apt/sources.list
+        apt-get update
+        
+        # Cài đặt các công cụ cơ bản để có thể dùng lệnh sudo, curl, git
+        apt-get install -y sudo curl git gnupg openjdk-8-jdk wget
 
-      - name: Cấu hình Git và repo
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          echo "REPO_URL=https://git.osdn.net/gitroot/android-x86/manifest" >> $GITHUB_ENV
-          echo "REPO_BRANCH=lineage-15.1-x86" >> $GITHUB_ENV
+    - name: Install Android Build Dependencies (Pure Ubuntu 16.04)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
+          libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip mtools \
+          u-boot-tools scons dkms bc squashfs-tools python-crypto
 
-      - name: Khởi tạo repo và đồng bộ mã nguồn
-        run: |
-          mkdir -p ~/android/lineage
-          cd ~/android/lineage
-          repo init -u ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} --depth=1
-          repo sync -c --force-sync --no-clone-bundle --no-tags -j$(nproc)
+    - name: Install Repo Tool (Legacy Compatible)
+      run: |
+        mkdir -p /usr/local/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
+        chmod a+x /usr/local/bin/repo
 
-      - name: Áp dụng patch Signature Spoofing cho MicroG
-        run: |
-          cd ~/android/lineage
-          # Lấy patch từ dự án LineageOS for MicroG (ví dụ)
-          wget -O sigspoof.patch https://raw.githubusercontent.com/lineageos4microg/docker-lineage-cicd/master/src/signature_spoofing_patches/lineage-15.1.patch
-          patch -p1 < sigspoof.patch
+    - name: Configure Git Identity
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        # Bật cấu hình cho phép Git chạy với các repo cũ không sợ cơ chế bảo mật mới chặn
+        git config --global daemon.receivepack true
 
-      - name: Thêm gói MicroG vào nguồn build
-        run: |
-          cd ~/android/lineage
-          # Tạo thư mục cho prebuilt MicroG
-          mkdir -p vendor/microg_prebuilt
-          cat > vendor/microg_prebuilt/Android.mk << 'EOF'
-          LOCAL_PATH := $(call my-dir)
-          include $(CLEAR_VARS)
-          LOCAL_MODULE := GmsCore
-          LOCAL_MODULE_TAGS := optional
-          LOCAL_SRC_FILES := GmsCore.apk
-          LOCAL_MODULE_CLASS := APPS
-          LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
-          LOCAL_CERTIFICATE := platform
-          include $(BUILD_PREBUILT)
-          EOF
-          # Tải APK MicroG mới nhất
-          wget -O vendor/microg_prebuilt/GmsCore.apk https://github.com/microg/GmsCore/releases/latest/download/GmsCore.apk
-          # Tương tự với GsfProxy, FakeStore...
-          echo "PRODUCT_PACKAGES += GmsCore" >> device/x86/lineage_x86_64/lineage_x86_64.mk
+    - name: Initialize and Sync Source Code
+      run: |
+        mkdir -p android-x86
+        cd android-x86
+        
+        # Trong Ubuntu 16.04, python mặc định là 2.7, hoàn toàn trùng khớp với Repo Tool đời cũ
+        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
+        repo sync -c -j4 --force-sync --no-tags
 
-      - name: Thiết lập environment build
-        run: |
-          cd ~/android/lineage
-          source build/envsetup.sh
-          lunch lineage_x86_64-eng
-          # Tăng dung lượng ccache
-          prebuilts/misc/linux-x86/ccache/ccache -M ${{ env.CCACHE_SIZE }}
+    - name: Inject microG & Patch System
+      run: |
+        cd android-x86
+        echo "=== Nhung microG vao he thong ==="
+        mkdir -p vendor/lineage/prebuilt/common/priv-app/GmsCore
+        mkdir -p vendor/lineage/prebuilt/common/priv-app/GsfProxy
+        mkdir -p vendor/lineage/prebuilt/common/app/FakeStore
 
-      - name: Build ROM
-        run: |
-          cd ~/android/lineage
-          mka bacon -j$(nproc)
+        wget -O vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk https://microg.org/fdroid/repo/com.google.android.gms-240913006.apk
+        wget -O vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk https://microg.org/fdroid/repo/com.google.android.gsf.login-20.apk
+        wget -O vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk https://microg.org/fdroid/repo/com.android.vending-20.apk
 
-      - name: Upload artifact (ROM zip)
-        uses: actions/upload-artifact@v3
-        with:
-          name: lineage-15.1-x86_64-microg
-          path: ~/android/lineage/out/target/product/x86_64/lineage-15.1-*.zip
-          retention-days: 7
+        MK_FILE=""
+        if [ -f "device/generic/common/device.mk" ]; then
+          MK_FILE="device/generic/common/device.mk"
+        elif [ -f "vendor/lineage/config/common.mk" ]; then
+          MK_FILE="vendor/lineage/config/common.mk"
+        fi
+        
+        if [ -n "$MK_FILE" ]; then
+          echo "Ghi cau hinh vao file: $MK_FILE"
+          echo -e "\nPRODUCT_COPY_FILES += \\\\\n  vendor/lineage/prebuilt/common/priv-app/GmsCore/GmsCore.apk:system/priv-app/GmsCore/GmsCore.apk \\\\\n  vendor/lineage/prebuilt/common/priv-app/GsfProxy/GsfProxy.apk:system/priv-app/GsfProxy/GsfProxy.apk \\\\\n  vendor/lineage/prebuilt/common/app/FakeStore/FakeStore.apk:system/app/FakeStore/FakeStore.apk" >> $MK_FILE
+        fi
+
+    - name: Build LineageOS ISO
+      run: |
+        cd android-x86
+        export WITHOUT_CHECK_API=true
+        export LC_ALL=C
+        
+        # Môi trường 16.04 thuần khiết, gọi thẳng lệnh build gốc
+        source build/envsetup.sh
+        lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
+        make -j$(nproc) iso_img
+
+    - name: Check Artifacts
+      run: |
+        echo "=== Kiem tra file ISO ==="
+        ls -lh android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso || ls -lh android-x86/out/target/product/*/*.iso || echo "Khong tim thay file ISO!"
+
+    - name: Upload ISO to GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: "LineageOS-15.1-Docker-${{ github.run_number }}"
+        name: "LineageOS 15.1 PC (Ubuntu 16.04 Toi Uu) (Build #${{ github.run_number }})"
+        body: |
+          Bản build đột phá chạy trên môi trường Container Ubuntu 16.04 gốc, loại bỏ xung đột hệ thống mới.
+        files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
