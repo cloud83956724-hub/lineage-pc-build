@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04 # Dùng bản 20.04 cực kỳ ổn định cho build Android cũ
+    runs-on: ubuntu-latest # Dùng bản 20.04 cực kỳ ổn định cho build Android cũ
 
     permissions:
       contents: write
