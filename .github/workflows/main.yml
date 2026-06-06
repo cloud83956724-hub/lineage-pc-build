@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # Chạy hoàn toàn trong môi trường Docker Ubuntu 16.04 gốc
+    # Chạy trong môi trường Docker Ubuntu 16.04 gốc để đảm bảo tương thích Python 2.7
     container:
       image: ubuntu:16.04
 
@@ -22,7 +22,7 @@ jobs:
     steps:
     - name: Install Fundamental Tools inside Container
       run: |
-        # Giữ nguyên cấu hình nguồn mặc định cực kỳ ổn định của image gốc
+        # Không sửa sources.list, dùng mặc định của image để tránh lỗi 404
         apt-get update
         apt-get install -y sudo curl git gnupg openjdk-8-jdk wget
 
@@ -50,7 +50,7 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Đồng bộ mã nguồn thông qua môi trường Python 2.7 bản địa
+        # Môi trường 16.04 có sẵn Python 2.7 giúp repo tool chạy mượt mà
         repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         repo sync -c -j4 --force-sync --no-tags
 
@@ -99,7 +99,7 @@ jobs:
         tag_name: "LineageOS-15.1-Docker-${{ github.run_number }}"
         name: "LineageOS 15.1 PC (Ubuntu 16.04 Pure) (Build #${{ github.run_number }})"
         body: |
-          Bản build sử dụng môi trường Docker 16.04 chuẩn mã nguồn gốc, sửa lỗi APT.
+          Bản build đột phá chạy trên môi trường Container Ubuntu 16.04 gốc để giải quyết triệt để lỗi đồng bộ mã nguồn.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
