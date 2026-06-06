@@ -55,7 +55,6 @@ jobs:
         echo "=== Khởi tạo Manifest và ép dùng luôn Mirror USTC ==="
         repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
-        # Bẻ lái bản đồ sang USTC (Đại học Khoa học Công nghệ TQ) để né hàng đợi Tsinghua
         if [ -f ".repo/manifests/default.xml" ]; then
           sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifests/default.xml
           sed -i 's|fetch=".."|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifests/default.xml
@@ -70,7 +69,6 @@ jobs:
         echo "=== Bắt đầu kéo mã nguồn từ USTC ==="
         
         success=false
-        # Chạy -j4 để kéo nhanh, nếu USTC ngon lành nó sẽ qua rất mượt
         if repo sync -c -j4 --force-sync --no-tags --no-clone-bundle --fail-fast; then
           success=true
         else
@@ -89,18 +87,22 @@ jobs:
 
     - name: Build LineageOS ISO
       run: |
-        cd android-x86
+        # Chuyển hẳn vào thư mục và lấy đường dẫn tuyệt đối bằng pwd
+        cd $GITHUB_WORKSPACE/android-x86
+        
         export WITHOUT_CHECK_API=true
         export LC_ALL=C
         
-        if [ -f "build/envsetup.sh" ]; then
-          source build/envsetup.sh
-          lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
-          make -j$(nproc) iso_img
-        else
-          echo "Không tìm thấy tệp envsetup.sh!"
-          exit 1
-        fi
+        echo "=== Đang nạp môi trường từ gốc thư mục: $(pwd) ==="
+        
+        # Gọi trực tiếp lệnh nạp không qua bọc điều kiện lồng phức tạp
+        source build/envsetup.sh
+        
+        echo "=== Chọn cấu hình thiết bị ==="
+        lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
+        
+        echo "=== Tiến hành biên dịch ra file ISO ==="
+        make -j$(nproc) iso_img
 
     - name: Check Artifacts
       run: |
@@ -113,7 +115,7 @@ jobs:
         tag_name: "LineageOS-PC-CleanBuild-${{ github.run_number }}"
         name: "LineageOS PC (Clean Build) (Build #${{ github.run_number }})"
         body: |
-          Bản build bẻ lái sang USTC Mirror để né tránh hàng đợi quá tải (Queue Position 309) của Tsinghua.
+          Bản build vượt qua chặng đồng bộ mã nguồn USTC xuất sắc, sửa lỗi định vị cấu trúc môi trường.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
