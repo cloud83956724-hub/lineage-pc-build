@@ -18,10 +18,12 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Free Disk Space
+    - name: Free Disk Space & Clean Old Cache
       run: |
         sudo docker image prune --all --force
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        # Đảm bảo dọn sạch mọi rác rưởi của các lần chạy trước để không bị nghẽn Git
+        rm -rf android-x86 .repo
         df -h
 
     - name: Install Android Build Dependencies
@@ -39,68 +41,40 @@ jobs:
         chmod a+x ~/bin/repo
         sudo ln -sf ~/bin/repo /usr/local/bin/repo
 
-    - name: Configure Git Identity
+    - name: Configure Git Identity with Timeout Fix
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
+        # Cấu hình ép Git phải tự ngắt và kết nối lại nếu bị đứng hình quá 300 giây
+        git config --global http.lowSpeedLimit 1000
+        git config --global http.lowSpeedTime 300
 
-    - name: Infinite Path Sync (Try All Paths Until Success)
+    - name: Pure Tsinghua Sync (No Google, No Freeze)
       run: |
         mkdir -p android-x86
         cd android-x86
         
-        echo "=== Khởi tạo Manifest gốc ==="
+        echo "=== Khởi tạo Manifest Sạch ==="
         repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
         
-        # Danh sách các con đường (Mirrors) có thể đi cứu cánh cho lỗi 404 Google
-        MIRRORS=(
-          "https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"
-          "https://mirrors.ustc.edu.cn/aosp/"
-          "https://mirrors.aliyun.com/img/aosp/"
-        )
-        
-        success=false
-        
-        echo "=== [ĐƯỜNG A] Thử nghiệm đồng bộ mặc định từ Google ==="
-        if repo sync -c -j4 --force-sync --no-tags --no-clone-bundle; then
-          success=true
+        echo "=== Bẻ lái vĩnh viễn sang Tsinghua ==="
+        if [ -f ".repo/manifests/default.xml" ]; then
+          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"|g' .repo/manifests/default.xml
+          sed -i 's|fetch=".."|fetch="https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"|g' .repo/manifests/default.xml
+        fi
+        if [ -f ".repo/manifest.xml" ]; then
+          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/"|g' .repo/manifest.xml
+        fi
+
+        echo "=== Bắt đầu kéo mã nguồn với cơ chế chống nghẽn ==="
+        # Hạ xuống -j2 ngay từ đầu để giữ kết nối ổn định, không làm máy chủ Tsinghua chặn băng thông
+        # Thêm --fail-fast để nếu có gói nào lỗi thật thì báo ngay lập tức chứ không đứng im đợi chờ
+        if ! repo sync -c -j2 --force-sync --no-tags --no-clone-bundle --fail-fast; then
+          echo "Phát hiện gói bị kẹt, kích hoạt lệnh rà soát cưỡng bức..."
+          repo sync -c -j1 --force-sync --no-tags --no-clone-bundle
         fi
         
-        # Nếu đường A gục ngã, bắt đầu duyệt qua các con đường khác
-        if [ "$success" = false ]; then
-          echo "Đường A sập (Lỗi 404 hoặc nghẽn mạng). Kích hoạt chiến dịch chuyển hướng!"
-          
-          for mirror in "${MIRRORS[@]}"; do
-            echo "--------------------------------------------------------"
-            echo "ĐANG CHUYỂN HƯỚNG SANG CON ĐƯỜNG MỚI: $mirror"
-            echo "--------------------------------------------------------"
-            
-            # Vá lại toàn bộ liên kết trong cấu trúc .repo sang Mirror mới
-            if [ -f ".repo/manifests/default.xml" ]; then
-              sed -i "s|fetch=\"https://android.googlesource.com/\"|fetch=\"$mirror\"|g" .repo/manifests/default.xml
-              sed -i "s|fetch=\"..\"|fetch=\"$mirror\"|g" .repo/manifests/default.xml
-            fi
-            if [ -f ".repo/manifest.xml" ]; then
-              sed -i "s|fetch=\"https://android.googlesource.com/\"|fetch=\"$mirror\"|g" .repo/manifest.xml
-              sed -i "s|fetch=\"..\"|fetch=\"$mirror\"|g" .repo/manifest.xml
-            fi
-            
-            # Thử sync lại với luồng tải an toàn hơn để tránh bị block bớ
-            if repo sync -c -j2 --force-sync --no-tags --no-clone-bundle; then
-              echo "Thành công rực rỡ tại con đường: $mirror!"
-              success=true
-              break
-            else
-              echo "Con đường $mirror vẫn không qua được, chuẩn bị đổi ngả..."
-            fi
-          done
-        fi
-        
-        if [ "$success" = false ]; then
-          echo "Tất cả các con đường cứu trợ đều bị chặn. Ép hệ thống chạy kiểm tra vớt vát..."
-        fi
-        
-        echo "=== Thư mục hiện tại sau chiến dịch ==="
+        echo "=== Kiểm tra cấu trúc thư mục ==="
         ls -la
 
     - name: Build LineageOS ISO
@@ -114,7 +88,7 @@ jobs:
           lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
           make -j$(nproc) iso_img
         else
-          echo "Không thể tìm thấy công cụ thiết lập build. Mã nguồn chưa đầy đủ!"
+          echo "Lỗi: Vẫn không lấy được tệp envsetup.sh!"
           exit 1
         fi
 
@@ -129,7 +103,7 @@ jobs:
         tag_name: "LineageOS-PC-CleanBuild-${{ github.run_number }}"
         name: "LineageOS PC (Clean Build) (Build #${{ github.run_number }})"
         body: |
-          Bản build tích hợp thuật toán 'Vạn dặm tìm đường': Tự động đổi ngả sang Tsinghua, USTC, hoặc Aliyun khi một nguồn bị sập.
+          Bản build phá vỡ tình trạng đóng băng (Anti-Freeze) bằng cách tối ưu tham số cấu hình kết nối Git thấp và ép dùng luồng an toàn.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
