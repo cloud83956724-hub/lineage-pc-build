@@ -12,7 +12,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # Chạy trong môi trường Docker Ubuntu 16.04 gốc để đảm bảo tương thích Python 2.7
     container:
       image: ubuntu:16.04
 
@@ -22,9 +21,9 @@ jobs:
     steps:
     - name: Install Fundamental Tools inside Container
       run: |
-        # Không sửa sources.list, dùng mặc định của image để tránh lỗi 404
         apt-get update
-        apt-get install -y sudo curl git gnupg openjdk-8-jdk wget
+        # Cài thêm python3 ở đây để gánh Repo Tool đời mới
+        apt-get install -y sudo curl git gnupg openjdk-8-jdk wget python3
 
     - name: Install Android Build Dependencies (Pure Ubuntu 16.04)
       run: |
@@ -50,7 +49,6 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Môi trường 16.04 có sẵn Python 2.7 giúp repo tool chạy mượt mà
         repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         repo sync -c -j4 --force-sync --no-tags
 
@@ -97,9 +95,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Docker-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Ubuntu 16.04 Pure) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (Ubuntu 16.04 Python3 Fix) (Build #${{ github.run_number }})"
         body: |
-          Bản build đột phá chạy trên môi trường Container Ubuntu 16.04 gốc để giải quyết triệt để lỗi đồng bộ mã nguồn.
+          Bản build bổ sung Python3 cho môi trường Docker 16.04 để chạy Repo Tool thành công.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
