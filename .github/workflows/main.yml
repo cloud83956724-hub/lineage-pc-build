@@ -1,4 +1,4 @@
-name: Build LineageOS 15.1 PC (GitHub Native Clean Solution)
+name: Build LineageOS 15.1 PC (GitHub Native Final Solution)
 
 on:
   workflow_dispatch:
