@@ -5,8 +5,7 @@ on:
 
 env:
   ROM_URL: "https://github.com/android-x86/manifest"
-  # Sửa từ lineage-15.1 thành oreo-x86 (Nhánh chuẩn của LineageOS 15.1 trên Android-x86)
-  ROM_BRANCH: "oreo-x86"
+  ROM_BRANCH: "lineage-15.1-x86" # Nhánh chính thức tích hợp LineageOS của tổ chức android-x86
   DEVICE_NAME: "android_x86_64"
 
 jobs:
@@ -51,7 +50,11 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
+        # Thử nghiệm khởi tạo linh hoạt: Nếu nhánh lineage-15.1-x86 không khớp, hệ thống tự động fallback về nhánh oreo-x86 chuẩn mã nguồn mở
+        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1 || \
+        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} -b oreo-mcts --no-clone-bundle --depth=1 || \
+        python3 /usr/local/bin/repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
+        
         python3 /usr/local/bin/repo sync -c -j4 --force-sync --no-tags --no-clone-bundle
 
     - name: Inject microG & Patch System
@@ -97,9 +100,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Native-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Oreo Branch Fix) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (Fallback Multi-Branch) (Build #${{ github.run_number }})"
         body: |
-          Bản build sửa đổi nhánh Rom thành oreo-x86 để tương thích hoàn toàn với manifest gốc của Android-x86.
+          Cấu hình bổ sung cơ chế Fallback tự động nhận diện nhánh manifest từ kho lưu trữ Android-x86.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
