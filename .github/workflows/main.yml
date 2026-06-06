@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # Tiếp tục chiến đấu trong hộp Docker 16.04
+    # Chạy hoàn toàn trong môi trường Docker Ubuntu 16.04 gốc
     container:
       image: ubuntu:16.04
 
@@ -22,12 +22,7 @@ jobs:
     steps:
     - name: Install Fundamental Tools inside Container
       run: |
-        # Đổi sang kho lưu trữ chính thức dành cho các bản Ubuntu cũ (Old Releases)
-        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial main restricted universe multiverse" > /etc/apt/sources.list
-        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial-updates main restricted universe multiverse" >> /etc/apt/sources.list
-        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial-backports main restricted universe multiverse" >> /etc/apt/sources.list
-        echo "deb http://old-releases.ubuntu.com/ubuntu/ xenial-security main restricted universe multiverse" >> /etc/apt/sources.list
-        
+        # Giữ nguyên cấu hình nguồn mặc định cực kỳ ổn định của image gốc
         apt-get update
         apt-get install -y sudo curl git gnupg openjdk-8-jdk wget
 
@@ -55,7 +50,7 @@ jobs:
         mkdir -p android-x86
         cd android-x86
         
-        # Chạy repo init trong môi trường Python 2.7 mặc định của Ubuntu 16.04
+        # Đồng bộ mã nguồn thông qua môi trường Python 2.7 bản địa
         repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         repo sync -c -j4 --force-sync --no-tags
 
@@ -102,9 +97,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "LineageOS-15.1-Docker-${{ github.run_number }}"
-        name: "LineageOS 15.1 PC (Ubuntu 16.04 Fix) (Build #${{ github.run_number }})"
+        name: "LineageOS 15.1 PC (Ubuntu 16.04 Pure) (Build #${{ github.run_number }})"
         body: |
-          Bản build sửa đổi hoàn chỉnh danh sách repo cũ của Ubuntu 16.04, chạy mượt mà.
+          Bản build sử dụng môi trường Docker 16.04 chuẩn mã nguồn gốc, sửa lỗi APT.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
