@@ -1,10 +1,11 @@
-name: Build LineageOS 15.1 PC (GitHub Native Fault-Tolerant Solution)
+name: Build LineageOS 16.0 PC (New Driver Compatibility Solution)
 
 on:
   workflow_dispatch:
 
 env:
   ROM_URL: "https://github.com/android-x86/manifest"
+  ROM_BRANCH: "lineage-16.0"                        # Đổi sang bản 9.0 để sửa lỗi driver và lỗi 404
   DEVICE_NAME: "android_x86_64"
 
 jobs:
@@ -44,37 +45,31 @@ jobs:
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        # Loại bỏ các giới hạn timeout quá khắt khe để tránh lỗi Curl 28 khi tải gói lớn
-        git config --global http.postBuffer 524288000
-        git config --global https.postBuffer 524288000
 
-    - name: Initialize with Alibaba Cloud Mirror
+    - name: Initialize with New Branch
       run: |
         mkdir -p android-x86
         cd android-x86
         
-        echo "=== Khởi tạo Manifest và chuyển hướng sang Alibaba Cloud ==="
-        repo init -u ${{ env.ROM_URL }} --no-clone-bundle --depth=1
+        echo "=== Khởi tạo Manifest với nhánh mới ${{ env.ROM_BRANCH }} ==="
+        repo init -u ${{ env.ROM_URL }} -b ${{ env.ROM_BRANCH }} --no-clone-bundle --depth=1
         
-        # Bẻ lái bản đồ sang Aliyun - Hệ thống đám mây siêu băng thông
+        # Bẻ lái sang USTC Mirror - Kho này giữ nhánh 16.0 cực chuẩn
         if [ -f ".repo/manifests/default.xml" ]; then
-          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.aliyun.com/img/aosp/"|g' .repo/manifests/default.xml
-          sed -i 's|fetch=".."|fetch="https://mirrors.aliyun.com/img/aosp/"|g' .repo/manifests/default.xml
+          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifests/default.xml
+          sed -i 's|fetch=".."|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifests/default.xml
         fi
         if [ -f ".repo/manifest.xml" ]; then
-          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.aliyun.com/img/aosp/"|g' .repo/manifest.xml
+          sed -i 's|fetch="https://android.googlesource.com/"|fetch="https://mirrors.ustc.edu.cn/aosp/"|g' .repo/manifest.xml
         fi
 
-    - name: Force Sync Source Code
+    - name: Sync Source Code
       run: |
         cd android-x86
-        echo "=== Bắt đầu kéo mã nguồn với chế độ bỏ qua gói lỗi cứng đầu ==="
+        echo "=== Bắt đầu kéo mã nguồn LineageOS 16.0 ==="
         
-        # Thêm --force-broken: Nếu dính 1 vài gói lỗi 404, hệ thống vẫn ép tải và giải nén các gói còn lại
-        # Chạy -j4 với server Ali rất khỏe
+        # Nhánh mới chạy rất mượt, dùng -j4 tải cho nhanh
         repo sync -c -j4 --force-sync --no-tags --no-clone-bundle --force-broken || true
-        
-        echo "=== Chạy rà soát cưỡng bức lượt cuối ==="
         repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --force-broken || true
         
         echo "=== Cấu trúc thư mục sau khi sync ==="
@@ -87,16 +82,11 @@ jobs:
         export WITHOUT_CHECK_API=true
         export LC_ALL=C
         
-        echo "=== Đang nạp môi trường từ gốc thư mục: $(pwd) ==="
-        
-        # Cưỡng bức tạo file liên kết hợp lệ phòng trường hợp repo sync báo lỗi giả
-        mkdir -p .repo/manifests
-        touch .repo/manifest.xml
-        
+        # Nạp môi trường
         source build/envsetup.sh
         
-        echo "=== Chọn cấu hình thiết bị ==="
-        lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug || lunch lineage_x86_64-userdebug
+        echo "=== Chọn cấu hình thiết bị x86_64 ==="
+        lunch android_${{ env.DEVICE_NAME }}-userdebug || lunch lineage_${{ env.DEVICE_NAME }}-userdebug || lunch ${{ env.DEVICE_NAME }}-userdebug
         
         echo "=== Tiến hành biên dịch ra file ISO ==="
         make -j$(nproc) iso_img
@@ -109,10 +99,10 @@ jobs:
     - name: Upload ISO to GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: "LineageOS-PC-CleanBuild-${{ github.run_number }}"
-        name: "LineageOS PC (Clean Build) (Build #${{ github.run_number }})"
+        tag_name: "LineageOS-16-PC-${{ github.run_number }}"
+        name: "LineageOS 16.0 PC (Build #${{ github.run_number }})"
         body: |
-          Bản build áp dụng hạ tầng Alibaba Cloud Mirror kết hợp tham số `--force-broken` bảo vệ cấu trúc cây mã nguồn.
+          Bản build nâng cấp lên LineageOS 16.0 (Android 9.0) để sửa triệt để lỗi driver phần cứng và lỗi thiếu file trên server.
         files: android-x86/out/target/product/${{ env.DEVICE_NAME }}/*.iso
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
